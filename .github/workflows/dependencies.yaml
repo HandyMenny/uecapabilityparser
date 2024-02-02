@@ -22,7 +22,7 @@ jobs:
         env:
           DEPENDENCY_GRAPH_INCLUDE_CONFIGURATIONS: '(compile|runtime)Classpath'
       - name: Run mikepenz gradle-dependency-submission
-        uses: mikepenz/gradle-dependency-submission@v1.0.0
+        uses: mikepenz/gradle-dependency-submission@{latest}
         with:
             gradle-build-configuration:  |-
               runtimeOnly
