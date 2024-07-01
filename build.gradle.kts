@@ -7,7 +7,7 @@ plugins {
     kotlin("plugin.serialization") version kotlinVersion
     id("com.github.johnrengelman.shadow") version "8.1.1"
     id("com.diffplug.spotless") version "6.22.0"
-    id("org.jetbrains.kotlinx.kover") version "0.8.1"
+    id("org.jetbrains.kotlinx.kover") version "0.8.2"
     id("maven-publish")
     application
 }
