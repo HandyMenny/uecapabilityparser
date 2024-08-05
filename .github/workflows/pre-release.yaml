@@ -28,7 +28,7 @@ jobs:
           sed -i "s/\(project.version=\).*/\1nightly-$date/g" src/main/resources/application.properties
       - name: Setup gradle
         if: ${{ env.NEW_COMMIT_COUNT > 0 }}
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v4
       - name: Build & Test
         if: ${{ env.NEW_COMMIT_COUNT > 0 }}
         run: ./gradlew genTsTypes build

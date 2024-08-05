@@ -21,7 +21,7 @@ jobs:
         run: |
           sed -i "s/\(project.version=\).*/\1${GITHUB_REF#refs/*/v}/g" src/main/resources/application.properties
       - name: Setup gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v4
       - name: Build & Test
         run: ./gradlew genTsTypes build
       - name: Save dist zip
