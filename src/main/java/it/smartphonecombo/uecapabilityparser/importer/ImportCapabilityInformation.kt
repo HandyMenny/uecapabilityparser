@@ -161,6 +161,31 @@ object ImportCapabilityInformation : ImportCapabilities {
                         null,
                         nrBandsMap,
                     )
+                    .typedList<ComboNr>()
+                    .map { combo ->
+                        // R17_2T2T / R17_1T2T require 2 UL layers on every switching band.
+                        // After feature linking the actual MIMO is known, so drop 2T2T/1T2T
+                        // configs from any combo that has a switching band with < 2 UL layers.
+                        if (combo.uplinkTxSwitch.none {
+                                it.type == UplinkTxSwitchType.R17_2T2T ||
+                                    it.type == UplinkTxSwitchType.R17_1T2T
+                            }
+                        ) {
+                            combo
+                        } else {
+                            val all2T =
+                                combo.componentsNr.count { c -> c.ulTxSwitch && c.mimoUL.max() >= 2 } >= 2
+                            if (all2T) combo
+                            else {
+                                val filtered =
+                                    combo.uplinkTxSwitch.filter {
+                                        it.type != UplinkTxSwitchType.R17_2T2T &&
+                                            it.type != UplinkTxSwitchType.R17_1T2T
+                                    }
+                                combo.copy(uplinkTxSwitch = filtered).copy(combo.featureSet)
+                            }
+                        }
+                    }
                     .typedList()
 
             val nrDcCombos = getNrDcBandCombinations(nr, nrCaCombos)
@@ -1608,16 +1633,28 @@ object ImportCapabilityInformation : ImportCapabilities {
         return ueCapFilter
     }
 
-    // R16 ul tx switch NRCA parsing. NRDC, ENDC, ul tx switch R17 and R18 not supported for lack of
-    // samples
+    // R16/R17/R18 ul tx switch NRCA parsing. NRDC and ENDC not supported for lack of samples.
     private fun getUlTxSwitchBandCombinations(nrCapability: UENrCapabilityJson): List<ComboNr> {
         val bandCombinationsPath = "rf-Parameters.supportedBandCombinationList-UplinkTxSwitch-r16"
         val bandCombinationsList = nrCapability.rootJson.getArrayAtPath(bandCombinationsPath)
 
         if (bandCombinationsList == null) return emptyList()
 
+        val v1700List =
+            nrCapability.rootJson.getArrayAtPath(
+                "rf-Parameters.supportedBandCombinationList-UplinkTxSwitch-v1700"
+            )
+        val v1720List =
+            nrCapability.rootJson.getArrayAtPath(
+                "rf-Parameters.supportedBandCombinationList-UplinkTxSwitch-v1720"
+            )
+        val v1800List =
+            nrCapability.rootJson.getArrayAtPath(
+                "rf-Parameters.supportedBandCombinationList-UplinkTxSwitch-v1800"
+            )
+
         val list = mutableListWithCapacity<ComboNr>(bandCombinationsList.size)
-        for (bandCombination in bandCombinationsList) {
+        for ((comboIndex, bandCombination) in bandCombinationsList.withIndex()) {
             val bandCombinationR16 = bandCombination.getObject("bandCombination-r16")
             val bandList = bandCombinationR16?.getArray("bandList") ?: continue
             val nrBands = mutableListWithCapacity<ComponentNr>(bandList.size)
@@ -1635,7 +1672,29 @@ object ImportCapabilityInformation : ImportCapabilities {
 
             val bandPairs = bandCombination.getArray("supportedBandPairListNR-r16") ?: continue
             val optionR16Str = bandCombination.getString("uplinkTxSwitching-OptionSupport-r16")
-            val optionR16 = UplinkTxSwitchOption.valueOf(optionR16Str)
+            // Default to SWITCHED_UL when the field is absent: option 1 (switchedUL) is the
+            // implicit baseline per TS 38.306; some UEs omit the field when only switchedUL
+            // is supported.
+            val optionR16 =
+                if (optionR16Str != null) UplinkTxSwitchOption.valueOf(optionR16Str as String?)
+                else UplinkTxSwitchOption.SWITCHED_UL
+
+            // Collect R17 2T2T info for this combo index.
+            // Two ASN.1 structures are used across UE implementations:
+            // - v1700 with uplinkTxSwitchingBandParametersList-v1700 (PUSCH coherence per band)
+            // - v1700 with supportedBandPairListNR-v1700 (period 2T2T per pair) + v1720 option
+            val v1700Entry = v1700List?.getOrNull(comboIndex)
+            val r17BandParamsList = v1700Entry?.getArray("uplinkTxSwitchingBandParametersList-v1700")
+            val r17BandPairList = v1700Entry?.getArray("supportedBandPairListNR-v1700")
+            val hasR17 = r17BandParamsList != null || r17BandPairList != null
+
+            // v1720 carries uplinkTxSwitching-OptionSupport2T2T-r17 for the newer structure
+            val v1720Entry = v1720List?.getOrNull(comboIndex)
+            val r17OptionStr = v1720Entry?.getString("uplinkTxSwitching-OptionSupport2T2T-r17")
+
+            // Collect R18 band pairs for this combo index, keyed by (ul1, ul2)
+            val v1800Entry = v1800List?.getOrNull(comboIndex)
+            val r18BandPairs = v1800Entry?.getArray("supportedBandPairListNR-r18")
 
             for (pairs in bandPairs) {
                 // -1 because index start from 1
@@ -1658,10 +1717,44 @@ object ImportCapabilityInformation : ImportCapabilities {
                 // sul supports only option 1
                 val ulTxSwitchOption = if (isSUL) UplinkTxSwitchOption.SWITCHED_UL else optionR16
 
-                val type = UplinkTxSwitchType.R16
-                val ulTxSwitchConfig = UplinkTxSwitchConfig(type, ulTxSwitchOption)
+                val ulTxSwitchConfigs = mutableListOf<UplinkTxSwitchConfig>()
 
-                val combo = ComboNr(newBands, featureSetCombination, bcs, listOf(ulTxSwitchConfig))
+                // R16 config (always present when band pair exists)
+                ulTxSwitchConfigs.add(UplinkTxSwitchConfig(UplinkTxSwitchType.R16, ulTxSwitchOption))
+
+                // R17 2T2T: present when either v1700 structure indicates 2T2T support.
+                // Option comes from v1720 uplinkTxSwitching-OptionSupport2T2T-r17 if present,
+                // otherwise falls back to the R16 option.
+                if (hasR17) {
+                    val r17Option =
+                        if (r17OptionStr != null) UplinkTxSwitchOption.valueOf(r17OptionStr as String?)
+                        else ulTxSwitchOption
+                    ulTxSwitchConfigs.add(
+                        UplinkTxSwitchConfig(UplinkTxSwitchType.R17_2T2T, r17Option)
+                    )
+                }
+
+                // R18: per band pair matched by (bandIndexUL1-r18, bandIndexUL2-r18) using 0-based
+                // indices
+                if (r18BandPairs != null) {
+                    for (r18Pair in r18BandPairs) {
+                        val r18ul1 = r18Pair.getInt("bandIndexUL1-r18")?.minus(1)
+                        val r18ul2 = r18Pair.getInt("bandIndexUL2-r18")?.minus(1)
+                        if (r18ul1 != ul1 || r18ul2 != ul2) continue
+
+                        val r18OptionStr =
+                            r18Pair.getString("uplinkTxSwitchingOptionForBandPair-r18")
+                        val r18Option = UplinkTxSwitchOption.valueOf(r18OptionStr as String?)
+                        val periodObj =
+                            r18Pair.getObject("uplinkTxSwitchingPeriodForBandPair-r18")
+                        val has2T = periodObj?.getString("switchingPeriodFor2T-r18") != null
+                        val r18Type =
+                            if (has2T) UplinkTxSwitchType.R18_2T else UplinkTxSwitchType.R18_1T
+                        ulTxSwitchConfigs.add(UplinkTxSwitchConfig(r18Type, r18Option))
+                    }
+                }
+
+                val combo = ComboNr(newBands, featureSetCombination, bcs, ulTxSwitchConfigs)
                 list.add(combo)
             }
         }
