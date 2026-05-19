@@ -41,7 +41,7 @@ dependencies {
     implementation("com.github.handymenny.mts-asn1:mts-asn1-per:$mtsAsn1Version")
     implementation("com.github.handymenny.mts-asn1:mts-asn1-kotlin-per:$mtsAsn1Version")
     implementation("com.github.handymenny.mts-asn1:mts-asn1-kotlinx-json:$mtsAsn1Version")
-    implementation("org.slf4j:slf4j-nop:2.0.17")
+    implementation("org.slf4j:slf4j-nop:2.0.18")
     implementation("com.github.ajalt.clikt:clikt:5.1.0")
     implementation("io.javalin:javalin:$javalinVersion")
     implementation("com.github.handymenny.pkts:pkts-core:8f78357")
