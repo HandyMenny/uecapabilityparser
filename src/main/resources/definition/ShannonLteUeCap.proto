@@ -18,10 +18,14 @@ message Combo {
      bit in the BitString. 0 means default i.e. only BCS 0 supported (if applicable).
    */
   optional uint32 bcs = 2;
-  // Unknown bitmask.
-  required uint32 unknown1 = 3;
-  // Unknown bitmask.
-  required uint32 unknown2 = 4;
+  /*
+     Bitmask for conf_id values 0 through 63, as defined by ap_plmn_mapping.
+     Each bit position corresponds to a plmn conf_id such as VZW, TMO, TELIA_NO, APAC_COMMON etc. 
+     A set bit means that the combo is allowed for that conf_id.
+   */
+  required uint64 conf_id0to63 = 3;
+  // Continuation bitmask for conf_id 64 to 95
+  required uint32 conf_id64to95 = 4;
 }
 
 message Component {
