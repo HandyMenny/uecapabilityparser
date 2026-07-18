@@ -121,9 +121,10 @@ object ImportMtkNr : ImportCapabilities {
         Regex(MAIN_CAP + """FSC\[(\d+)],\s*(?:band num\[\d+],\s*)?D/U((?:\[[^\]]+/[^\]]+])+)""")
     private val reDuPair = Regex("""\[([^/]+)/([^\]]+)]""")
 
-    // Regex for combo lines - supports both old and new trace formats:
+    // Regex for combo lines - supports old, new, and realme 7 5G trace formats:
     // New: [CAP]CA idx [0] NL1 bc, num[1] DL: ... UL: ... FSC[1], BC info[...]
     // Old: [MAIN][CAP] CA idx [1], NL1 CA band comb, band num[1], DL: ..., UL: ..., FSC[2]
+    // realme 7 5G: [MAIN][CAP] NL1 CA band comb, band num[1], DL: ..., UL: ..., FSC[1]
     private val reComboNew =
         Regex(
             CAP +
@@ -134,6 +135,12 @@ object ImportMtkNr : ImportCapabilities {
         Regex(
             MAIN_CAP +
                 """CA idx \[(\d+)],\s*NL1 CA band comb,\s*band num\[(\d+)],\s*""" +
+                """DL:\s+([\w_]+),\s*UL:\s+([\w_]+),\s*FSC\[(\d+)]"""
+        )
+    private val reComboNoIdx =
+        Regex(
+            MAIN_CAP +
+                """()NL1 CA band comb,\s*band num\[(\d+)],\s*""" +
                 """DL:\s+([\w_]+),\s*UL:\s+([\w_]+),\s*FSC\[(\d+)]"""
         )
 
@@ -255,7 +262,8 @@ object ImportMtkNr : ImportCapabilities {
         // trim
         tag = tag.trim()
 
-        return tag
+        // realme 7 5G variant omits the leading "CA idx [N]" prefix
+        return if (tag.startsWith("NL1 CA band comb")) "CA idx" else tag
     }
 
     /**
@@ -363,12 +371,14 @@ object ImportMtkNr : ImportCapabilities {
     }
 
     /**
-     * Parse a combo definition line. Tries new format first, then old format.
+     * Parse a combo definition line. Tries new format first, then old format, then the no-CA-idx
+     * format.
      *
      * Return the parsed ICombo or null.
      */
     private fun parseComboLine(line: String): ICombo? {
-        val m = reComboNew.find(line) ?: reComboOld.find(line) ?: return null
+        val m =
+            reComboNew.find(line) ?: reComboOld.find(line) ?: reComboNoIdx.find(line) ?: return null
         val dlStr = m.groupValues[3]
         val ulStr = m.groupValues[4]
         val fscNum = m.groupValues[5].toInt()

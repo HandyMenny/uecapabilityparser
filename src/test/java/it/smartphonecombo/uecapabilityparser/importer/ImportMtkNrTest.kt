@@ -14,4 +14,9 @@ internal class ImportMtkNrTest :
     fun parseMtkNrTraceOld() {
         parse("mtkNrTraceOld.txt", "mtkNrTraceOld.json")
     }
+
+    @Test
+    fun parseRealme75gMtkNrTrace() {
+        parse("realme75gMtkNrTrace.txt", "realme75gMtkNrTrace.json")
+    }
 }
